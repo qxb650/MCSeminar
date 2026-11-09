@@ -48,6 +48,10 @@ def Metropolis_Hastings(x_g, draw_x_prop, prop_logdensity, post_logdensity, chec
 
     return x_gplus, accept
 
+#########################################
+# STEP FUNCTIONS FOR SIGMA_V, RHO AND V #
+#########################################
+
 def sigma_V_step(priors, Theta, Theta_fill, Y, V, Delta):
 
     # unpack prior and create prior density function
@@ -73,9 +77,9 @@ def sigma_V_step(priors, Theta, Theta_fill, Y, V, Delta):
     post_density = lambda x: obs_ll(mu, kappa, kappatheta, x, rho, Y, V, Delta) + latent_ll(kappa, kappatheta, x, V, Delta) + prior_density(x)
 
     # do MH-step
-    sigma_sq_V_gplus, _ = Metropolis_Hastings(sigma_sq_V_g, draw_sigma_sq_V_prop, prop_density, post_density)
+    sigma_sq_V_gplus, accept = Metropolis_Hastings(sigma_sq_V_g, draw_sigma_sq_V_prop, prop_density, post_density)
 
-    return sigma_sq_V_gplus
+    return sigma_sq_V_gplus, accept
 
 def rho_step(priors, Theta, Theta_fill, Y, V, Delta):
 
@@ -114,9 +118,9 @@ def rho_step(priors, Theta, Theta_fill, Y, V, Delta):
     prop_logdensity = lambda x: stats.norm.logpdf(x, loc=rho_mean, scale=rho_std)
 
     # do MH-step
-    rho_gplus, _ = Metropolis_Hastings(rho_g, draw_rho_prop, prop_logdensity, post_logdensity, check_support_fn)
+    rho_gplus, accept = Metropolis_Hastings(rho_g, draw_rho_prop, prop_logdensity, post_logdensity, check_support_fn)
 
-    return rho_gplus
+    return rho_gplus, accept
 
 def V_step(priors, Theta, Theta_fill, Y, V, Delta):
 
@@ -133,6 +137,7 @@ def V_step(priors, Theta, Theta_fill, Y, V, Delta):
     
     # allocate
     V_gplus = np.zeros_like(V) + np.nan # T
+    accepts = np.zeros_like(V) + np.nan # T
     T = len(V)
     
     for t in range(0,T):
@@ -191,8 +196,9 @@ def V_step(priors, Theta, Theta_fill, Y, V, Delta):
         post_logdensity = lambda x: obs_llt(x) + latent_llt(x) + obs_lltmimus(x) + latent_lltminus(x)
 
         # do MH-step
-        Vt_gplus, _ = Metropolis_Hastings(Vt_g, draw_Vt_prop, prop_logdensity, post_logdensity, check_support_fn)
+        Vt_gplus, accept_t = Metropolis_Hastings(Vt_g, draw_Vt_prop, prop_logdensity, post_logdensity, check_support_fn)
 
         V_gplus[t] = Vt_gplus
+        accepts[t] = accept_t
 
-    return V_gplus
+    return V_gplus, accepts

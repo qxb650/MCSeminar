@@ -7,12 +7,13 @@ from Gibbs import mu_step, kappatheta_kappa_step
 from Metropolis import sigma_V_step, rho_step, V_step
 
 
-def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta):
+def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, accepts, G, Delta):
 
     def cycle(Theta_g, V_g):
 
         # allocate
         Theta_fill = Theta_g.copy()
+        accepts_g = {}
 
         # mu
         mu_gplus = mu_step(priors, Theta_fill, Y, V_g, Delta)
@@ -24,17 +25,20 @@ def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta):
         Theta_fill['kappa'] = kappa_gplus
 
         # sigma_sq_V
-        sigma_sq_V_gplus = sigma_V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        sigma_sq_V_gplus, sigma_sq_V_accept = sigma_V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
         Theta_fill['sigma_sq_V'] = sigma_sq_V_gplus
+        accepts_g['sigma_sq_V'] = sigma_sq_V_accept
 
         # rho
-        rho_gplus = rho_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        rho_gplus, rho_accept = rho_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
         Theta_fill['rho'] = rho_gplus
+        accepts_g['rho'] = rho_accept
 
         # V
-        V_gplus = V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        V_gplus, accepts_V = V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        accepts_g['V'] = accepts_V
 
-        return Theta_fill, V_gplus
+        return Theta_fill, V_gplus, accepts_g
 
 
     for g in range(G):
@@ -45,7 +49,7 @@ def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta):
             Theta_g = init_guess_Theta
             V_g = init_guess_V
 
-        Theta_g, V_g = cycle(Theta_g, V_g)
+        Theta_g, V_g, accepts_g = cycle(Theta_g, V_g)
 
         draws['mu_draws'][g] = Theta_g['mu']
         draws['kappa_draws'][g] = Theta_g['kappa']
@@ -53,6 +57,10 @@ def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta):
         draws['sigma_sq_V_draws'][g] = Theta_g['sigma_sq_V']
         draws['rho_draws'][g] = Theta_g['rho']
         draws['V_draws'][:,g] = V_g
+
+        accepts['sigma_sq_V'][g] = accepts_g['sigma_sq_V']
+        accepts['rho'][g] = accepts_g['rho']
+        accepts['V'][:,g] = accepts_g['V']
 
 def plot_distributions(draws, G, burnin=0, bins=100):
 
@@ -64,8 +72,9 @@ def plot_distributions(draws, G, burnin=0, bins=100):
     ax[0,1].hist(draws['kappa_draws'][burnin:], bins=bins)
     ax[0,1].set_title(r'$\kappa$ draws')
 
-    ax[1,0].hist(draws['kappatheta_draws'][burnin:], bins=bins)
-    ax[1,0].set_title(r'$\kappa \theta$ draws')
+    theta_draws = draws['kappatheta_draws'] / draws['kappa_draws']
+    ax[1,0].hist(theta_draws[burnin:], bins=bins)
+    ax[1,0].set_title(r'$\theta$ draws')
 
     ax[1,1].hist(draws['sigma_sq_V_draws'][burnin:], bins=bins)
     ax[1,1].set_title(r'$\sigma^2_V$ draws')
@@ -90,16 +99,28 @@ def plot_Vts(draws, periods, burnin=0):
         ax[periods.index(t)].set_title(rf'$V_{t}$ draws')
     
     
-def plot_VY(draws, Y, burnin=0):
+def plot_VY(draws, Y, index, burnin=0):
 
     f, ax = plt.subplots(2, 1, figsize=(12, 8))
 
-    ax[0].plot(np.nanmean(draws['V_draws'][:, burnin:], axis=1))
-    ax[0].set_title(r'$\mathbb{E}[V_t]$ draws')
+    V = draws['V_draws'][:, burnin:]
+    t = np.arange(V.shape[0])
 
-    ax[1].plot(Y[1:] - Y[:-1])
-    ax[1].set_title(r'$dY_t$')
+    lo, hi = np.nanpercentile(V, [2.5, 97.5], axis=1)
 
-    plt.tight_layout()
-    plt.xlabel('t')
-    plt.show()
+    ax[0].plot(index, np.nanmean(V, axis=1), label=r'$\mathbb{E}[V_t]$')
+    ax[0].fill_between(index, lo, hi, alpha=0.3, label='95% interval')
+    ax[0].grid()
+
+    ax[0].set_title(r'$\mathbb{E}[V_t]$')
+    ax[0].legend()
+
+    ax[1].plot(index[1:], Y[1:] - Y[:-1])
+    ax[1].set_title(r'SP500 log-returns: $dY_t$')
+    ax[1].grid()
+
+    for i in range(2):
+        plt.setp(ax[i].get_xticklabels(), rotation=45, ha='right')
+        ax[i].grid(alpha=0.5)
+
+    f.tight_layout()
