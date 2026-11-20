@@ -240,3 +240,77 @@ from Gibbs import mu_step, kappatheta_kappa_step
 #         V_gplus[t] = Vt_gplus
 
 #     return V_gplus
+
+# def drop_nan_draws(d):
+
+#     # infer number of draws by taking shape in last dim of first dict element
+#     n_draws = next(iter(d.values())).shape[-1]
+
+#     # boolean for which elements to choose
+#     valid = np.ones(n_draws, dtype=bool)
+
+#     # loop over elements in dict
+#     for v in d.values():
+
+#         # find nans
+#         bad = np.isnan(v)
+
+#         # if it is V or other with 2D
+#         if v.ndim > 1:
+#             bad = bad.any(axis=tuple(range(v.ndim - 1)))
+#         valid &= ~bad
+
+#     return {k: v[..., valid] for k, v in d.items()}
+
+# draws = drop_nan_draws(draws)
+# accepts = drop_nan_draws(accepts)
+
+# mu_draws_burnedin = draws['mu_draws'][int(0.5*len(draws['mu_draws'])):]
+
+# m = 5
+# n = len(mu_draws_burnedin) // m
+
+# assert len(mu_draws_burnedin) % m == 0
+
+# mu_draws_burnedin_ms = np.array(np.split(mu_draws_burnedin, [i*n for i in range(1,m)])) # list which is m long
+# # mu_draws_burnin_ms_mean = np.array([arr.mean() for arr in mu_draws_burnedin_ms]) # (m,)
+# # B = (n/(m-1))*np.sum((mu_draws_burnin_ms_mean - np.mean(mu_draws_burnedin))**2) # (m,) - scalar -> sum -> scalar
+# # W = np.mean(np.sum((1/(n-1))*((mu_draws_burnedin_ms) - mu_draws_burnin_ms_mean[:,None])**2, axis=1))
+
+# # var_mu = ((n-1)/n)*W + (1/n)*B
+
+# # f, ax = plt.subplots()
+# # for i in range(m):
+# #     i_lo = i*n
+# #     i_hi = (i+1)*n
+# #     mu_draws_burnedin_m = mu_draws_burnedin[i_lo:i_hi]
+# #     ax.plot(mu_draws_burnedin_m, label=str(i))
+
+# # f.legend()
+
+# Rhat_ess(mu_draws_burnedin_ms)
+
+# # parameters defined in CIR paper used to derive ergodic Gamma dist. for volatility
+# omega_CIR = (2*kappa)/(sigma_V**2)
+# nu_CIR = (2*kappa*theta)/(sigma_V**2)
+
+# shape_Gamma = nu_CIR
+# scale_Gamma = 1/omega_CIR
+
+# # plot
+# f, ax = plt.subplots()
+# x = np.linspace(0,0.5,1000)
+# ax.plot(x,stats.gamma.pdf(x, a=shape_Gamma, scale=scale_Gamma), label='pdf')
+# ax.vlines(shape_Gamma*scale_Gamma, 0.00, 20.0, ls='--', color='red', label='mean')
+# ax.set_xlabel('V')
+# ax.set_ylabel('Density')
+# ax.legend()
+
+# # draw volatility from ergodic distribution
+# V_draws = np.random.gamma(shape=shape_Gamma, scale=scale_Gamma, size=(N))
+
+# # draw brownian motions
+# dW1s = np.sqrt(dt) * np.random.normal(size=(N))
+
+# # draw Xs
+# dX_draws = (mu-0.5*V_draws)*dt + np.sqrt(V_draws)*dW1s

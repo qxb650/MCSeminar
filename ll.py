@@ -16,7 +16,7 @@ def eps_V_t(kappa, kappatheta, sigma_sq_V, Vt, Vtplus, Delta):
 
 def eps_Y_t(mu, Yt, Ytplus, Vt, Delta):
 
-    num = Ytplus - Yt - mu*Delta + 0.5*Vt*Delta
+    num = Ytplus - Yt - mu*Delta
     denom = np.sqrt(Vt*Delta)
 
     return num/denom
@@ -31,7 +31,7 @@ def obs_ll_t(mu, kappa, kappatheta, sigma_sq_V, rho, Yt, Ytplus, Vt, Vtplus, Del
 
     fac = -0.5*np.log(2*np.pi*Vt*(1-rho**2)*Delta)
 
-    exp_num = Ytplus - Yt - mu*Delta + 0.5*Vt*Delta - rho*np.sqrt(Vt*Delta)*eps_V_t_
+    exp_num = Ytplus - Yt - mu*Delta - rho*np.sqrt(Vt*Delta)*eps_V_t_
     exp_denom = 2*Vt*Delta*(1-rho**2)
 
     log_dens = fac - (exp_num**2)/exp_denom
@@ -49,26 +49,26 @@ def latent_ll_t(kappa, kappatheta, sigma_sq_V, Vt, Vtplus, Delta):
 
     return log_dens
 
-#################################
-# LOG-LIKELIHOOD ACROSS PERIODS #
-#################################
+##############################################
+# LOG-LIKELIHOOD ACROSS PERIODS (VECTORIZED) #
+##############################################
 
 def obs_ll(mu, kappa, kappatheta, sigma_sq_V, rho, Y, V, Delta):
     
-    Y_noT = Y[:-1] # T-1: Y1,Y2,...,YT-1
-    Y_leaded = Y[1:] # T-1: Y2,Y3,...,YT
-    V_noT = V[:-1] # T-1: V1,V2,...,VT-1
-    V_leaded = V[1:] # T-1: V2,V3,...,VT
+    Y_noT = Y[None,:-1] # T-1: Y1,Y2,...,YT-1, shape (1,T-1)
+    Y_leaded = Y[None,1:] # T-1: Y2,Y3,...,YT, shape (1,T-1)
+    V_noT = V[:,:-1] # T-1: V1,V2,...,VT-1, shape (N,T-1)
+    V_leaded = V[:,1:] # T-1: V2,V3,...,VT, shape (N,T-1)
 
     obs_loglikelihoods = obs_ll_t(mu, kappa, kappatheta, sigma_sq_V, rho, Y_noT, Y_leaded, V_noT, V_leaded, Delta)
 
-    return np.sum(obs_loglikelihoods)
+    return np.sum(obs_loglikelihoods, axis=1)
 
 def latent_ll(kappa, kappatheta, sigma_sq_V, V, Delta):
 
-    V_noT = V[:-1] # T-1: V1,V2,...,VT-1
-    V_leaded = V[1:] # T-1: V2,V3,...,VT
+    V_noT = V[:,:-1] # T-1: V1,V2,...,VT-1, shape (N,T-1)
+    V_leaded = V[:,1:] # T-1: V2,V3,...,VT, shape (N,T-1)
 
     latent_loglikelihoods = latent_ll_t(kappa, kappatheta, sigma_sq_V, V_noT, V_leaded, Delta)
 
-    return np.sum(latent_loglikelihoods)
+    return np.sum(latent_loglikelihoods, axis=1)

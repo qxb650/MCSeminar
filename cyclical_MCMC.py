@@ -1,13 +1,80 @@
 import numpy as np
-import scipy.stats as stats
-import matplotlib.pyplot as plt
 import pandas as pd
+from types import SimpleNamespace
 
 from Gibbs import mu_step, kappatheta_kappa_step
-from Metropolis import sigma_V_step, rho_step, V_step
+from Metropolis import sigma_V_step, rho_step, V_step, V_step_2blocks
 
+def load_data(path, do_pct=True, do_print=True, VIX_path=None):
 
-def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, accepts, G, Delta):
+    # 1. load data
+    SP500_df = pd.read_csv(path)
+
+    # 2. drop nans in prices
+    SP500_df = SP500_df.dropna(subset=['SP500'])
+
+    # 3. compute log-prices
+    SP500_df['log_prices'] = SP500_df['SP500'].apply(lambda x: np.log(x))
+
+    # 4. compute log-returns
+    SP500_df['log_returns'] = SP500_df['log_prices'].diff()
+
+    # 5. set index corresponding to log-prices
+    SP500_df['observation_date'] = pd.DatetimeIndex(SP500_df['observation_date'])
+    SP500_df = SP500_df.set_index('observation_date')
+
+    # 6. print dates
+    if do_print: print(f'Data from {SP500_df.index[0]} to {SP500_df.index[-1]}')
+
+    # 7. to numpy
+    Y = SP500_df['log_prices'].to_numpy() # (T,)
+    dY = SP500_df['log_returns'].to_numpy()[1:] # (T,)
+    dY_pd = SP500_df['log_returns'][1:]
+    Y_indx = SP500_df.index
+    T = len(Y)
+
+    if do_pct: dY_pd = 100*dY_pd
+    if do_pct: dY = 100*dY
+    if do_pct: Y = 100*Y
+
+    if VIX_path is not None:
+
+        VIX_df = pd.read_csv(VIX_path)
+
+        # set index
+        VIX_df['observation_date'] = pd.DatetimeIndex(VIX_df['observation_date'])
+        VIX_df = VIX_df.set_index('observation_date')
+
+        VIX_df = VIX_df.loc[SP500_df.index[0]:SP500_df.index[-1]]
+
+        return Y, dY, dY_pd, Y_indx, T, VIX_df
+
+    else:
+        
+        return Y, dY, dY_pd, Y_indx, T
+
+def allocate_draws(N,T,G):
+
+    draws = SimpleNamespace()
+
+    draws.mu = np.zeros((N,G)) + np.nan
+    draws.kappa = np.zeros((N,G)) + np.nan
+    draws.kappatheta = np.zeros((N,G)) + np.nan
+    draws.sigma_sq_V = np.zeros((N,G)) + np.nan
+    draws.rho = np.zeros((N,G)) + np.nan
+    draws.V = np.zeros((N,T,G)) + np.nan
+
+    draws.sigma_sq_V_accepts = np.zeros((N,G)) + np.nan
+    draws.rho_accepts = np.zeros((N,G)) + np.nan
+    draws.V_accepts = np.zeros((N,T,G)) + np.nan
+
+    return draws
+
+##########################################
+# CYCLICAL METROPOLIS-HASTINGS ALGORITHM #
+##########################################
+
+def cyclical_MH(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta, print_iter=10, do_2blocks=False):
 
     def cycle(Theta_g, V_g):
 
@@ -35,92 +102,52 @@ def cyclical_MCMC(priors, init_guess_Theta, init_guess_V, Y, draws, accepts, G, 
         accepts_g['rho'] = rho_accept
 
         # V
-        V_gplus, accepts_V = V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        if do_2blocks:
+            V_gplus, accepts_V = V_step_2blocks(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+        else:
+            V_gplus, accepts_V = V_step(priors, Theta_g, Theta_fill, Y, V_g, Delta)
+
         accepts_g['V'] = accepts_V
 
         return Theta_fill, V_gplus, accepts_g
 
-
     for g in range(G):
 
-        if (g % 10 == 0): print(f'g = {g}')
+        if (g % print_iter == 0) and (g > 0):
+            AR_sigma_sq_V = draws.sigma_sq_V_accepts[:,g-print_iter:g].mean()
+            AR_rho = draws.rho_accepts[:,g-print_iter:g].mean()
+            AR_V = draws.V_accepts[:,:,g-print_iter:g].mean()
+            AR_V_min = draws.V_accepts[:,:,g-print_iter:g].mean(axis=(0,2)).min() # average over (N,G)-dimensions
+            AR_V_max = draws.V_accepts[:,:,g-print_iter:g].mean(axis=(0,2)).max()
+            print(f'g = {g}\t\tAR:[sigma_sq_V={100*AR_sigma_sq_V:.1f}%,\trho={100*AR_rho:.1f}%,\tV={100*AR_V:.1f}%,\tmin(V)={100*AR_V_min:.1f}%,\tmax(V)={100*AR_V_max:.1f}%]')
 
         if g == 0:
             Theta_g = init_guess_Theta
             V_g = init_guess_V
 
+        # do cycle
         Theta_g, V_g, accepts_g = cycle(Theta_g, V_g)
 
-        draws['mu_draws'][g] = Theta_g['mu']
-        draws['kappa_draws'][g] = Theta_g['kappa']
-        draws['kappatheta_draws'][g] = Theta_g['kappatheta']
-        draws['sigma_sq_V_draws'][g] = Theta_g['sigma_sq_V']
-        draws['rho_draws'][g] = Theta_g['rho']
-        draws['V_draws'][:,g] = V_g
+        # save draws
+        draws.mu[:,g] = Theta_g['mu']
+        draws.kappa[:,g] = Theta_g['kappa']
+        draws.kappatheta[:,g] = Theta_g['kappatheta']
+        draws.sigma_sq_V[:,g] = Theta_g['sigma_sq_V']
+        draws.rho[:,g] = Theta_g['rho']
+        draws.V[:,:,g] = V_g
 
-        accepts['sigma_sq_V'][g] = accepts_g['sigma_sq_V']
-        accepts['rho'][g] = accepts_g['rho']
-        accepts['V'][:,g] = accepts_g['V']
+        # save accepts
+        draws.sigma_sq_V_accepts[:,g] = accepts_g['sigma_sq_V']
+        draws.rho_accepts[:,g] = accepts_g['rho']
+        draws.V_accepts[:,:,g] = accepts_g['V']
 
-def plot_distributions(draws, G, burnin=0, bins=100):
+#######################
+# LOAD AND SAVE DRAWS #
+#######################
 
-    f, ax = plt.subplots(3, 2, figsize=(12, 8))
+def save_fn(ns, filename):
+    np.savez(filename + '.npz', **ns.__dict__)
 
-    ax[0,0].hist(draws['mu_draws'][burnin:], bins=bins)
-    ax[0,0].set_title(r'$\mu$ draws')
-
-    ax[0,1].hist(draws['kappa_draws'][burnin:], bins=bins)
-    ax[0,1].set_title(r'$\kappa$ draws')
-
-    theta_draws = draws['kappatheta_draws'] / draws['kappa_draws']
-    ax[1,0].hist(theta_draws[burnin:], bins=bins)
-    ax[1,0].set_title(r'$\theta$ draws')
-
-    ax[1,1].hist(draws['sigma_sq_V_draws'][burnin:], bins=bins)
-    ax[1,1].set_title(r'$\sigma^2_V$ draws')
-
-    ax[2,0].hist(draws['rho_draws'][burnin:], bins=bins)
-    ax[2,0].set_title(r'$\rho$ draws')
-
-    ax[2,1].hist(draws['V_draws'][:, burnin:].flatten(), bins=bins)
-    ax[2,1].set_title(r'$V$ draws')
-
-    plt.tight_layout()
-
-def plot_Vts(draws, periods, burnin=0):
-
-    # periods should be a list of integers corresponding to the periods to plot
-    # function should infer rows and cols from the number of periods provided in the list periods
-
-    f, ax = plt.subplots(1, len(periods), figsize=(12, 8))
-
-    for t in periods:
-        ax[periods.index(t)].hist(draws['V_draws'][t, burnin:], bins=100)
-        ax[periods.index(t)].set_title(rf'$V_{t}$ draws')
-    
-    
-def plot_VY(draws, Y, index, burnin=0):
-
-    f, ax = plt.subplots(2, 1, figsize=(12, 8))
-
-    V = draws['V_draws'][:, burnin:]
-    t = np.arange(V.shape[0])
-
-    lo, hi = np.nanpercentile(V, [2.5, 97.5], axis=1)
-
-    ax[0].plot(index, np.nanmean(V, axis=1), label=r'$\mathbb{E}[V_t]$')
-    ax[0].fill_between(index, lo, hi, alpha=0.3, label='95% interval')
-    ax[0].grid()
-
-    ax[0].set_title(r'$\mathbb{E}[V_t]$')
-    ax[0].legend()
-
-    ax[1].plot(index[1:], Y[1:] - Y[:-1])
-    ax[1].set_title(r'SP500 log-returns: $dY_t$')
-    ax[1].grid()
-
-    for i in range(2):
-        plt.setp(ax[i].get_xticklabels(), rotation=45, ha='right')
-        ax[i].grid(alpha=0.5)
-
-    f.tight_layout()
+def load_fn(filename):
+    with np.load(filename + '.npz') as f:
+        return SimpleNamespace(**{k: f[k] for k in f.files})
