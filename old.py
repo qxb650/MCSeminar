@@ -314,3 +314,126 @@ from Gibbs import mu_step, kappatheta_kappa_step
 
 # # draw Xs
 # dX_draws = (mu-0.5*V_draws)*dt + np.sqrt(V_draws)*dW1s
+
+    # # draw from ergodic distributoon
+    # else:
+
+    #     # CIR parameters
+    #     omega_CIR = (2*kappa)/(sigma_sq_V)
+    #     nu_CIR = (2*kappa*theta)/(sigma_sq_V)
+
+    #     # Gamma dist parameters
+    #     shape_Gamma = nu_CIR
+    #     scale_Gamma = 1/omega_CIR
+
+    #     Vt = np.random.gamma(shape=shape_Gamma, scale=scale_Gamma, size=(N)) # (N,)
+# # res = minimize(f, x0, bounds=Bounds, method='Nelder-Mead')
+
+# # guess on parameters
+# mu = dY.mean()
+# theta = dY.var()
+# kappa = 0.0231 # from Eraker
+# sigma_sq_V = 0.1434**2 # from Eraker
+# rho = -0.3974 # from Eraker
+
+# def compute_gs(seed, mu, kappa, theta, sigma_sq_V, rho):
+
+#     np.random.seed(seed)
+#     _, _, _, dY_sim = full_trunc_euler(mu, kappa, theta, sigma_sq_V, rho, Delta, N=N, T=T, burnin=burnin, do_print=False) # (T-1, N)
+
+#     M_Theta = moment_vec_(dY_sim)
+
+#     return M_data - M_Theta
+
+# def compute_crit(seed, W, mu, kappa, theta, sigma_sq_V, rho, do_ls=True):
+
+#     gs = compute_gs(seed, mu, kappa, theta, sigma_sq_V, rho)[:,None] # (K_y+L+K_rv,K_yrv,1)
+
+#     if do_ls:
+
+#         # do Cholesky decomposition of weighting matrix
+#         Lc = np.linalg.cholesky(W)
+
+#         # return (K_y+L+K_rv+K_yrv,)
+#         return (Lc.T @ gs).ravel()
+
+#     else:
+#         # return scalar
+#         return (gs.T @ W @ gs).item()
+
+# def f_outer(seed, W, x):
+
+#     mu = x[0]
+#     kappa = x[1]
+#     theta = x[2]
+#     sigma_sq_V = x[3]
+#     rho = x[4]
+
+#     obj = compute_crit(seed, W, mu, kappa, theta, sigma_sq_V, rho)
+
+#     print(f'mu = {mu:.5f}')
+#     print(f'kappa = {kappa:.5f}')
+#     print(f'theta = {theta:.5f}')
+#     print(f'sigma_sq_V = {sigma_sq_V:.5f}')
+#     print(f'rho = {rho:.5f}')
+#     print(f'obj = {np.abs(obj).mean():.5f}', '\n')
+
+#     return obj
+
+# def SMM(dY, N_multi, iter, seed, W_start, lb, ub):
+
+#     # compute data moments
+
+#     # (N_multi, 5)
+#     Theta_multi = draw_init_Theta_and_V(dY, bounds, lens_roll, [0, 0], N_multi, Delta, plot_Vrolls=False, for_SMM=True)
+
+#     par_list = []
+#     obj_list = []
+
+#     # define objective
+#     f = lambda x: f_outer(seed, W_start, x)
+
+#     for i_multi in range(N_multi):
+
+#         # unpack guess
+#         x0_i = Theta_multi[i_multi]
+
+#         print(f'Starting SMM with guess: {x0_i}')
+#         print(f'{50*'--'}')
+    
+#         # minimize        
+#         res = least_squares(f, x0_i, bounds=(lb,ub), method='trf', diff_step=1e-2, x_scale=[0.05, 0.03, 1.0, 0.05, 0.5])
+
+#         # unpack result and save
+#         par_list.append(res.x)
+#         obj_list.append(2*res.cost)
+
+#     # find minimzer
+#     Theta_init = par_list[np.array(obj_list).argmin()]
+
+#     # allocate
+#     W_list = []
+#     res_list = []
+
+#     # update W and minimize again
+#     for i in range(iter):
+
+#         print(f'\nStarting SMM with new W: i = {i}')
+#         print(f'{50*'--'}')
+
+#         if i == 0: Theta = Theta_init
+
+#         new_W = update_W(dY, Theta[0], Theta[1], Theta[2], Theta[3], Theta[4], Delta, T, N, burnin, K_y, L, K_rv, K_yrv)
+
+#         f = lambda x: f_outer(seed, new_W, x)
+
+#         res = least_squares(f, Theta, bounds=(lb,ub), method='trf', diff_step=1e-2, x_scale=[0.05, 0.03, 1.0, 0.05, 0.5])
+
+#         Theta = res.x
+
+#         print(f'Converged after {res.nfev} iterations')
+
+#         W_list.append(new_W)
+#         res_list.append(res)
+
+#     return W_list, res_list

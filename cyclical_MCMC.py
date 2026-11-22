@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from types import SimpleNamespace
+import matplotlib.pyplot as plt
 
 from Gibbs import mu_step, kappatheta_kappa_step
 from Metropolis import sigma_V_step, rho_step, V_step, V_step_2blocks
@@ -69,6 +70,56 @@ def allocate_draws(N,T,G):
     draws.V_accepts = np.zeros((N,T,G)) + np.nan
 
     return draws
+
+################################
+# FUNCTIONS FOR INITIAL VALUES #
+################################
+
+def draw_init_Theta_and_V(dY, bounds, lens_roll, bounds_facs_roll, N, Delta, plot_Vrolls=True, for_SMM=False):
+
+    init_guess_Theta = {}
+
+    # par
+    if for_SMM: mu = np.random.uniform(bounds['mu_l'],bounds['mu_h'],size=(N,))
+    kappa = np.random.uniform(bounds['kappa_l'],bounds['kappa_h'],size=(N,))
+    theta = np.random.uniform(bounds['theta_l'],bounds['theta_h'],size=(N,))
+    sigma_sq_V = np.random.uniform(bounds['sigma_sq_V_l'],bounds['sigma_sq_V_h'],size=(N,))
+    rho = np.random.uniform(bounds['rho_l'],bounds['rho_h'],size=(N,))
+
+    init_guess_Theta['kappa'] = kappa
+    init_guess_Theta['theta'] = theta
+    init_guess_Theta['sigma_sq_V'] = sigma_sq_V
+    init_guess_Theta['rho'] = rho
+
+    # V
+    rv = dY**2
+    T = len(dY)+1
+
+    assert len(lens_roll) == N
+
+    # compute rolling average of realized variances
+    av_var = dY.var() / Delta
+    min_rv = bounds_facs_roll[0]*av_var
+    max_rv = bounds_facs_roll[1]*av_var
+
+    rv_rolling_pd = [(pd.Series(rv).rolling(window=len_roll, center=True, min_periods=1).mean()).to_numpy() / Delta for len_roll in lens_roll]
+    rv_rolling = np.array(np.clip(rv_rolling_pd, min_rv, max_rv)) # (N,T-1)
+
+    # add VT-1 as VT. rvt is for Vt-Vt+1 but is based on Vt
+    rv_rolling = np.concatenate([rv_rolling, rv_rolling[:, -1:]], axis=1) # (N,T-1) -> (N,T)
+
+    if plot_Vrolls:
+        f, ax = plt.subplots()
+        for i in range(N): ax.plot(rv_rolling[i], label=f'{lens_roll[i]} window')
+        ax.plot(np.ones(T)*av_var, label=r'Average variance')
+        ax.grid(alpha=0.5)
+        f.legend()
+
+    if for_SMM:
+        return np.array([mu, kappa, theta, sigma_sq_V, rho]).T
+
+    else:
+        return init_guess_Theta, rv_rolling
 
 ##########################################
 # CYCLICAL METROPOLIS-HASTINGS ALGORITHM #
