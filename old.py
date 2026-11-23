@@ -781,3 +781,8 @@ from Gibbs import mu_step, kappatheta_kappa_step
 #     W = (W + W.T)/2
 
 #     return W
+
+            # AR_V_min = draws.V_accepts[:,:,g_V-1].mean(axis=(0)).min() # average over (N,)-dimensions
+            # AR_V_max = draws.V_accepts[:,:,g_V-1].mean(axis=(0)).max()
+
+ #,\tmin(V)={100*AR_V_min:.1f}%,\tmax(V)={100*AR_V_max:.1f}%]')

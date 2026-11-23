@@ -60,9 +60,28 @@ def Rhat_ess(x):
 
     return Rhat, n_eff, var, B, W
 
+def convergence_V(draws):
+
+    T = draws.V.shape[1]
+
+    Rhat_list = []
+    ESS_list = []
+
+    for t in range(0, T):
+
+        print(t)
+        Rhat, ESS, _, _, _ = Rhat_ess(np.log(draws.V[:,t,:]))
+        Rhat_list.append(Rhat)
+        ESS_list.append(ESS)
+
+    Rhat = np.array([Rhat_list]).flatten()
+    ESS = np.array([ESS_list]).flatten()
+
+    return Rhat, ESS
+
 def print_conv_table(draws, burnin=0):
 
-    names = [k for k in draws.__dict__.keys() if ('_accepts' not in k) and (k != 'V')]
+    names = [k for k in draws.__dict__.keys() if ('_accepts' not in k) and (k != 'V') and ('_burnin' not in k)]
     w = max(len('Parameter'), max(len(k) for k in names))
     w1, w2, w3, w4, w5, w6, w7, w8, w9, w10 = 14, 10, 10, 10, 10, 10, 8, 10, 12, 12
 

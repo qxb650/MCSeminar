@@ -54,7 +54,10 @@ def load_data(path, do_pct=True, do_print=True, VIX_path=None):
         
         return Y, dY, dY_pd, Y_indx, T
 
-def allocate_draws(N,T,G):
+def allocate_draws(N,T,G,thin_V=1):
+
+    assert G % thin_V == 0
+    G_eff = G // thin_V
 
     draws = SimpleNamespace()
 
@@ -63,13 +66,45 @@ def allocate_draws(N,T,G):
     draws.kappatheta = np.zeros((N,G)) + np.nan
     draws.sigma_sq_V = np.zeros((N,G)) + np.nan
     draws.rho = np.zeros((N,G)) + np.nan
-    draws.V = np.zeros((N,T,G)) + np.nan
+    draws.V = np.zeros((N,T,G_eff)) + np.nan
 
     draws.sigma_sq_V_accepts = np.zeros((N,G)) + np.nan
     draws.rho_accepts = np.zeros((N,G)) + np.nan
-    draws.V_accepts = np.zeros((N,T,G)) + np.nan
+    draws.V_accepts = np.zeros((N,T,G_eff)) + np.nan
 
     return draws
+
+def prepare_draws(draws, burnin, thin_V=1):
+
+    out = {}
+
+    for name, x in vars(draws).items():
+
+        # ensure x is array
+        x = np.asarray(x)
+
+        # unpack number of draws for each chain
+        n = x.shape[-1]
+
+        # burnin is less for V-process if thinned
+        b = burnin // thin_V if x.ndim == 3 else burnin
+
+        # drops the last draw if n - b is odd
+        half = (n - b) // 2
+
+        if half < 1:
+            raise ValueError(f"burnin={burnin} too large for {name} (n={n})")
+
+        # save the burn-in draws separately
+        out[name + '_burnin'] = x[..., :b]
+
+        # discard burn-in, then split each chain in two at the middle
+        parts = [x[..., b + k * half: b + (k + 1) * half] for k in range(2)]
+
+        # stack halves along the chain axis (axis 0): chain i's 2nd half becomes chain i + n_chains
+        out[name] = np.concatenate(parts, axis=0)
+
+    return SimpleNamespace(**out)
 
 ################################
 # FUNCTIONS FOR INITIAL VALUES #
@@ -125,7 +160,7 @@ def draw_init_Theta_and_V(dY, bounds, lens_roll, bounds_facs_roll, N, Delta, plo
 # CYCLICAL METROPOLIS-HASTINGS ALGORITHM #
 ##########################################
 
-def cyclical_MH(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta, print_iter=10, do_2blocks=False):
+def cyclical_MH(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta, print_iter=10, do_2blocks=False, thin_V=1, split_chains=True, burnin=0):
 
     def cycle(Theta_g, V_g):
 
@@ -164,13 +199,15 @@ def cyclical_MH(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta, prin
 
     for g in range(G):
 
+        g_V = g // thin_V
+
         if (g % print_iter == 0) and (g > 0):
             AR_sigma_sq_V = draws.sigma_sq_V_accepts[:,g-print_iter:g].mean()
             AR_rho = draws.rho_accepts[:,g-print_iter:g].mean()
-            AR_V = draws.V_accepts[:,:,g-print_iter:g].mean()
-            AR_V_min = draws.V_accepts[:,:,g-print_iter:g].mean(axis=(0,2)).min() # average over (N,G)-dimensions
-            AR_V_max = draws.V_accepts[:,:,g-print_iter:g].mean(axis=(0,2)).max()
-            print(f'g = {g}\t\tAR:[sigma_sq_V={100*AR_sigma_sq_V:.1f}%,\trho={100*AR_rho:.1f}%,\tV={100*AR_V:.1f}%,\tmin(V)={100*AR_V_min:.1f}%,\tmax(V)={100*AR_V_max:.1f}%]')
+            
+            AR_V = draws.V_accepts[:,:,g_V-1].mean()
+
+            print(f'g = {g}\t\tAR:[sigma_sq_V={100*AR_sigma_sq_V:.1f}%,\trho={100*AR_rho:.1f}%,\tV={100*AR_V:.1f}%]')
 
         if g == 0:
             Theta_g = init_guess_Theta
@@ -185,12 +222,16 @@ def cyclical_MH(priors, init_guess_Theta, init_guess_V, Y, draws, G, Delta, prin
         draws.kappatheta[:,g] = Theta_g['kappatheta']
         draws.sigma_sq_V[:,g] = Theta_g['sigma_sq_V']
         draws.rho[:,g] = Theta_g['rho']
-        draws.V[:,:,g] = V_g
+        if g % thin_V == 0: draws.V[:,:,g_V] = V_g
 
         # save accepts
         draws.sigma_sq_V_accepts[:,g] = accepts_g['sigma_sq_V']
         draws.rho_accepts[:,g] = accepts_g['rho']
-        draws.V_accepts[:,:,g] = accepts_g['V']
+        if g % thin_V == 0: draws.V_accepts[:,:,g_V] = accepts_g['V']
+
+    if split_chains: draws = prepare_draws(draws, burnin, thin_V=thin_V)
+
+    return draws
 
 #######################
 # LOAD AND SAVE DRAWS #
