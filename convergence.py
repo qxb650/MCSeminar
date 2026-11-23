@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from types import SimpleNamespace
 
+from scipy.stats import skew, kurtosis
+
 def Rhat_ess(x):
     
     # x is (m,n): m chains, each with n draws
@@ -57,8 +59,6 @@ def Rhat_ess(x):
     n_eff = m*n / (1 + 2*sum(rho[1:t+1]))
 
     return Rhat, n_eff, var, B, W
-
-from scipy.stats import skew, kurtosis
 
 def print_conv_table(draws, burnin=0):
 

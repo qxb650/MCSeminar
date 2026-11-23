@@ -87,7 +87,7 @@ def draw_init_Theta_and_V(dY, bounds, lens_roll, bounds_facs_roll, N, Delta, plo
     rho = np.random.uniform(bounds['rho_l'],bounds['rho_h'],size=(N,))
 
     init_guess_Theta['kappa'] = kappa
-    init_guess_Theta['theta'] = theta
+    init_guess_Theta['kappatheta'] = kappa*theta
     init_guess_Theta['sigma_sq_V'] = sigma_sq_V
     init_guess_Theta['rho'] = rho
 
